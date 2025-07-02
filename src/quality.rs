@@ -1,8 +1,10 @@
-use crate::{error::ApiError, model::{Proxy, APP_CONFIG}, storage};
-use anyhow::Result;
+use crate::{error::ApiError, storage};
+use anyhow::{anyhow, Result};
 use chrono::Local;
 use reqwest::Client;
 use std::time::Duration;
+use crate::model::{Proxy, ProxyBasic, ProxyCheckResult, APP_CONFIG};
+use crate::utils::{round2, speed_to_score};
 
 #[derive(Clone)]
 pub struct QualityConfig {
@@ -11,6 +13,7 @@ pub struct QualityConfig {
     pub stability_weight: f32,
     pub test_count: u32,
     pub timeout: Duration,
+    pub test_urls: Vec<String>,
 }
 
 impl Default for QualityConfig {
@@ -20,13 +23,14 @@ impl Default for QualityConfig {
             success_weight: 0.3,
             stability_weight: 0.3,
             test_count: 3,
-            timeout: Duration::from_secs(APP_CONFIG.timeout),
+            timeout: Duration::from_secs(APP_CONFIG.verify.timeout),
+            test_urls: APP_CONFIG.verify.test_urls.clone(),
         }
     }
 }
 
-pub async fn evaluate(proxy: &Proxy, config: &QualityConfig) -> Result<Proxy, ApiError> {
-    let mut result = proxy.clone();
+pub async fn evaluate(proxy: &ProxyBasic, config: &QualityConfig) -> Result<Proxy, ApiError> {
+    let mut result = ProxyCheckResult::default();
     let test_results = run_tests(proxy, config).await?;
 
     result.speed = Some(test_results.average_speed());
@@ -42,44 +46,63 @@ pub async fn evaluate(proxy: &Proxy, config: &QualityConfig) -> Result<Proxy, Ap
     }
 
     compute_score(&mut result, config);
-    Ok(result)
+    Ok(Proxy::from_parts(proxy.clone(), result))
 }
 
-async fn run_tests(proxy: &Proxy, config: &QualityConfig) -> Result<QualityTestResults> {
+async fn run_tests(proxy: &ProxyBasic, config: &QualityConfig) -> Result<QualityTestResults> {
     let proxy_url = format!("http://{}:{}", proxy.ip, proxy.port);
     let proxy_obj = reqwest::Proxy::all(&proxy_url)?;
 
-    let mut results = QualityTestResults::new(config.test_count);
+    let mut all_results = Vec::new();
 
-    for _ in 0..config.test_count {
-        let client = Client::builder()
-            .proxy(proxy_obj.clone())
-            .timeout(config.timeout)
-            .build()?;
+    for test_url in &config.test_urls {
+        let mut results = QualityTestResults::new(config.test_count);
 
-        let start = std::time::Instant::now();
-        match client.get("https://cip.cc").send().await {
-            Ok(_) => {
-                let elapsed = start.elapsed().as_secs_f32(); // 获取秒
-                let rounded = (elapsed * 100.0).round() / 100.0; // 保留两位小数
-                results.record_success(rounded);
-            }
-            Err(_) => {
-                results.record_failure();
+        for _ in 0..config.test_count {
+            let client = reqwest::Client::builder()
+                .proxy(proxy_obj.clone())
+                .timeout(config.timeout)
+                .build()?;
+
+            let start = std::time::Instant::now();
+            match client.get(test_url).send().await {
+                Ok(_) => {
+                    let elapsed = start.elapsed().as_secs_f32();
+                    let rounded = (elapsed * 100.0).round() / 100.0;
+                    results.record_success(rounded);
+                }
+                Err(_) => {
+                    results.record_failure();
+                }
             }
         }
+        all_results.push(results);
     }
-    Ok(results)
+
+    // 综合所有节点结果
+    Ok(merge_test_results(&all_results))
 }
 
-fn compute_score(proxy: &mut Proxy, config: &QualityConfig) {
-    let speed_score = match proxy.speed.unwrap_or(f32::MAX) {
-        s if s < 100.0 => 1.0,
-        s if s < 500.0 => 0.8,
-        s if s < 1000.0 => 0.5,
-        s if s < 2000.0 => 0.3,
-        _ => 0.1,
-    };
+fn merge_test_results(results: &[QualityTestResults]) -> QualityTestResults {
+    let total_tests = results.iter().map(|r| r.total).sum();
+    let mut merged = QualityTestResults::new(total_tests);
+
+    for r in results {
+        merged.successes.extend(&r.successes);
+        merged.failures += r.failures;
+    }
+
+    merged
+}
+
+/// 速度打分等级示意：
+/// <100ms = 1.0
+/// <500ms = 0.8
+/// <1000ms = 0.5
+/// <2000ms = 0.3
+/// ≥2000ms = 0.1
+fn compute_score(proxy: &mut ProxyCheckResult, config: &QualityConfig) {
+    let speed_score = speed_to_score(proxy.speed.unwrap_or(f32::MAX));
     let success = proxy.success_rate.unwrap_or(0.0);
     let stability = proxy.stability.unwrap_or(0.0);
 
@@ -119,20 +142,28 @@ impl QualityTestResults {
             self.successes.len() as f32 / self.total as f32
         };
 
-        Self::round2(rate)
+        round2(rate)
     }
 
     fn average_speed(&self) -> f32 {
         let speed = if self.successes.is_empty() {
             0.0
         } else {
-            self.successes.iter().map(|&x| x as f32).sum::<f32>() / self.successes.len() as f32
+            self.successes.iter().map(|&x| x).sum::<f32>() / self.successes.len() as f32
         };
 
-        Self::round2(speed)
+        round2(speed)
     }
+}
 
-    fn round2(val: f32) -> f32 {
-        (val * 100.0).round() / 100.0
+impl Default for ProxyCheckResult {
+    fn default() -> Self {
+        Self {
+            speed: None,
+            success_rate: None,
+            stability: None,
+            score: None,
+            last_checked: None,
+        }
     }
 }
