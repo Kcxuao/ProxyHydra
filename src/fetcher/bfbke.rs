@@ -1,4 +1,4 @@
-use crate::model::{Proxy, ProxyBasic};
+use crate::model::ProxyBasic;
 use anyhow::Result;
 use tracing::info;
 

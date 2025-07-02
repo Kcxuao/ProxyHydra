@@ -1,13 +1,11 @@
-mod error;
-mod storage;
-mod fetcher;
-mod quality;
-mod verifier;
 mod model;
-mod utils;
+mod service;
+mod fetcher;
+mod common;
 
 use tracing::log::info;
 use tracing_subscriber::fmt::init;
+use crate::service::{storage, verifier};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

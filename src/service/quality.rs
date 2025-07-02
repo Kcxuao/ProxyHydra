@@ -1,10 +1,13 @@
-use crate::{error::ApiError, storage};
-use anyhow::{anyhow, Result};
-use chrono::Local;
-use reqwest::Client;
-use std::time::Duration;
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use crate::model::{Proxy, ProxyBasic, ProxyCheckResult, APP_CONFIG};
-use crate::utils::{round2, speed_to_score};
+use crate::common::utils::{round2, speed_to_score};
+use crate::storage;
+use anyhow::Result;
+use chrono::Local;
+use std::time::Duration;
+use crate::common::error::ApiError;
 
 #[derive(Clone)]
 pub struct QualityConfig {

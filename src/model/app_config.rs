@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 

@@ -5,7 +5,7 @@ use anyhow::Result;
 use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
 use tokio::sync::OnceCell;
 use tracing::info;
-use crate::model::{Proxy, ProxyBasic, ProxyCheckResult};
+use crate::model::{Proxy, ProxyBasic};
 
 static DB_POOL: OnceCell<Pool<Sqlite>> = OnceCell::const_new();
 

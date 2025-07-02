@@ -1,15 +1,17 @@
-use crate::{error::ApiError, quality, storage};
+use crate::storage;
 use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering}
+    atomic::{AtomicUsize, Ordering},
+    Arc
 };
 use anyhow::Result;
 use std::time::Instant;
 use tokio::sync::Semaphore;
-use tracing::{info, error};
+use tracing::{error, info};
 use tracing::log::warn;
-use crate::model::{ProxyBasic, Proxy, ProxyCheckResult, APP_CONFIG};
-use crate::utils::dedup_proxies;
+use crate::common::error::ApiError;
+use crate::model::{Proxy, ProxyBasic, APP_CONFIG};
+use crate::service::quality;
+use crate::common::utils::dedup_proxies;
 
 
 pub async fn verify_all(mut basics: Vec<ProxyBasic>) -> Result<usize> {
