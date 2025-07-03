@@ -64,15 +64,15 @@ pub async fn verify_all(mut basics: Vec<ProxyBasic>) -> Result<usize> {
 
     let success_count = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(Semaphore::new(APP_CONFIG.verify.semaphore));
-    let quality_config = quality::QualityConfig::default();
+    let quality_config = Arc::new(quality::QualityConfig::default());
 
     let tasks: Vec<_> = basics.into_iter().enumerate().map(|(i, basic)| {
         let success_count = Arc::clone(&success_count);
         let semaphore = Arc::clone(&semaphore);
-        let quality_config = quality_config.clone();
+        let quality_config = Arc::clone(&quality_config);
 
         tokio::spawn(async move {
-            let _permit = semaphore.acquire_owned().await.unwrap();
+            let _permit = semaphore.acquire_owned().await.expect("Semaphore acquire failed");
             let start = Instant::now();
 
             let label = format!("[#{} {}:{}]", i + 1, basic.ip, basic.port);
@@ -96,7 +96,6 @@ pub async fn verify_all(mut basics: Vec<ProxyBasic>) -> Result<usize> {
                     error!("❌ {} 验证出错，耗时 {}ms，错误：{}", label, ms, e);
                 }
             }
-
             Ok::<(), ApiError>(())
         })
     }).collect();

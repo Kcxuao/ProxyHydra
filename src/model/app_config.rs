@@ -11,6 +11,7 @@ pub static APP_CONFIG: Lazy<AppConfig> =
 pub struct AppConfig {
     pub verify: VerifyConfig,
     pub db: DbConfig,
+    pub log: LoggingConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -26,6 +27,12 @@ pub struct VerifyConfig {
     pub semaphore: usize,
     pub timeout: u64,
     pub test_urls: Vec<String>,
+    pub verify_level: u32
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct LoggingConfig {
+    pub console_levels: Vec<String>,
 }
 
 

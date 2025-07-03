@@ -105,3 +105,19 @@ pub struct ProxyCheckResult {
     pub score: Option<f64>,
     pub last_checked: Option<NaiveDateTime>,
 }
+
+/// 提供 `ProxyCheckResult` 的默认值实现。
+///
+/// 默认情况下，各个评估字段（如速度、成功率、稳定性、得分）
+/// 以及最后检测时间均为空（`None`），表示尚未进行过质量测试。
+impl Default for ProxyCheckResult {
+    fn default() -> Self {
+        Self {
+            speed: None,
+            success_rate: None,
+            stability: None,
+            score: None,
+            last_checked: None,
+        }
+    }
+}

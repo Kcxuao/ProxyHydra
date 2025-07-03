@@ -3,10 +3,11 @@
 semaphore = 20
 # 超时时间
 timeout = 3
+
+verify_level = 0
 # 验证代理时使用的URL列表
 test_urls = [
     "https://cip.cc",
-    "https://httpbin.org/get",
 ]
 
 [db]
@@ -20,3 +21,7 @@ connection_string = "sqlite://proxy.db"
 table_name = "proxies"
 # 最大连接数
 max_connections = 10
+
+[log]
+# 控制台上输出的日志级别
+console_levels = ["INFO"]   # 支持 "error", "warn", "info", "debug", "trace"

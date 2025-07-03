@@ -34,7 +34,7 @@ pub async fn fetch() -> Result<Vec<ProxyBasic>> {
     let re = Regex::new(r#"const fpsList = (.*);"#)?;
     let mut list = Vec::new();
 
-    for page in 1..=3 {
+    for page in 1..=1 {
         info!("正在请求第 {} 页数据", page);
         let url = format!("https://www.kuaidaili.com/free/intr/{}/", page);
         let html = reqwest::get(&url).await?.text().await?;

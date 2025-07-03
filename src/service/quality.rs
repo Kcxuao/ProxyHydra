@@ -7,37 +7,39 @@
 //!
 //! ## 功能简介
 //!
-//! - 向指定目标地址发起多轮请求，评估代理连接的成功率与速度；  
-//! - 计算响应时间的平均值与方差，以评估稳定性；  
-//! - 合并多个目标节点的测试结果，生成综合质量报告；  
+//! - 向指定目标地址发起多轮请求，评估代理连接的成功率与速度；
+//! - 计算响应时间的平均值与方差，以评估稳定性；
+//! - 合并多个目标节点的测试结果，生成综合质量报告；
 //! - 根据测试数据打分，生成综合评分，供筛选与排序使用。
 //!
 //! ## 核心结构与函数
 //!
-//! - [`QualityTestResults`]：单个测试任务的统计结果；  
-//! - [`QualityConfig`]：质量测试参数配置；  
-//! - [`run_tests`]：对代理执行多个目标的质量测试；  
+//! - [`QualityTestResults`]：单个测试任务的统计结果；
+//! - [`QualityConfig`]：质量测试参数配置；
+//! - [`run_tests`]：对代理执行多个目标的质量测试；
 //! - [`evaluate`]：入口函数，运行测试并生成完整代理对象（含质量信息）。
 //!
 //! ## 使用场景
 //!
 //! 用于批量代理验证场景中的质量评估步骤，适合代理池清洗、优选策略、自动下线低质量节点等需求。
 
-
-use crate::common::error::ApiError;
 use crate::common::utils::{round2, speed_to_score};
 use crate::db::get_storage;
 use crate::db::manager::ProxyStorage;
-use crate::model::{Proxy, ProxyBasic, ProxyCheckResult, APP_CONFIG};
+use crate::model::{APP_CONFIG, Proxy, ProxyBasic, ProxyCheckResult};
 use anyhow::Result;
 use chrono::Utc;
 use std::time::Duration;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use tokio::time::sleep;
+use tracing::log::{debug, info, warn};
 
 /// 用于配置代理质量评估的权重与测试参数。
 ///
 /// 包括成功率、响应速度、稳定性的权重比例，
 /// 以及测试次数、单次请求超时时间和测试目标 URL 列表。
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct QualityConfig {
     /// 速度评分权重（0.0 - 1.0）。
     pub speed_weight: f64,
@@ -47,12 +49,22 @@ pub struct QualityConfig {
     pub stability_weight: f64,
     /// 每个代理测试的请求次数。
     pub test_count: u64,
+    /// 每个代理测试的失败重试次数。
+    pub max_retries: u8,
     /// 每次请求的超时时间。
     pub timeout: Duration,
     /// 用于测试的目标 URL 列表。
     pub test_urls: Vec<String>,
+    /// 验证等级：快速、标准、细致
+    pub verify_level: VerifyLevel,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum VerifyLevel {
+    Fast,
+    Standard,
+    Detailed,
+}
 /// 提供默认配置：
 /// - 速度、成功率、稳定性权重均为 1.0；
 /// - 测试次数为 3；
@@ -60,13 +72,28 @@ pub struct QualityConfig {
 /// - 默认测试地址为 `https://cip.cc`。
 impl Default for QualityConfig {
     fn default() -> Self {
+        let level = match APP_CONFIG.verify.verify_level {
+            0 => VerifyLevel::Fast,
+            1 => VerifyLevel::Standard,
+            2 => VerifyLevel::Detailed,
+            _ => VerifyLevel::Standard,
+        };
+
+        let (test_count, max_retries, timeout) = match level {
+            VerifyLevel::Fast => (1, 0, Duration::from_secs(3)),
+            VerifyLevel::Standard => (3, 3, Duration::from_secs(APP_CONFIG.verify.timeout)),
+            VerifyLevel::Detailed => (5, 5, Duration::from_secs(APP_CONFIG.verify.timeout * 2)),
+        };
+
         Self {
             speed_weight: 0.4,
             success_weight: 0.3,
             stability_weight: 0.3,
-            test_count: 3,
-            timeout: Duration::from_secs(APP_CONFIG.verify.timeout),
+            test_count,
+            max_retries,
+            timeout,
             test_urls: APP_CONFIG.verify.test_urls.clone(),
+            verify_level: level,
         }
     }
 }
@@ -134,22 +161,6 @@ impl QualityTestResults {
     }
 }
 
-/// 提供 `ProxyCheckResult` 的默认值实现。
-///
-/// 默认情况下，各个评估字段（如速度、成功率、稳定性、得分）
-/// 以及最后检测时间均为空（`None`），表示尚未进行过质量测试。
-impl Default for ProxyCheckResult {
-    fn default() -> Self {
-        Self {
-            speed: None,
-            success_rate: None,
-            stability: None,
-            score: None,
-            last_checked: None,
-        }
-    }
-}
-
 /// 对单个代理进行多次测试，并根据响应情况计算评分。
 ///
 /// 会使用 `test_count` 指定的次数对代理进行连接，
@@ -161,7 +172,7 @@ impl Default for ProxyCheckResult {
 ///
 /// # 返回
 /// 带有打分结果的完整 `Proxy` 实例。
-pub async fn evaluate(proxy: &ProxyBasic, config: &QualityConfig) -> Result<Proxy, ApiError> {
+pub async fn evaluate(proxy: &ProxyBasic, config: &QualityConfig) -> Result<Proxy> {
     let mut result = ProxyCheckResult::default();
     let test_results = run_tests(proxy, config).await?;
 
@@ -169,8 +180,11 @@ pub async fn evaluate(proxy: &ProxyBasic, config: &QualityConfig) -> Result<Prox
     result.success_rate = Some(test_results.success_rate());
     result.last_checked = Some(Utc::now().naive_utc());
 
-    if let Some(old) = get_storage().find_proxy_by_ip_port(&proxy.ip, &proxy.port).await? {
-        let delta = (result.success_rate.unwrap() - old.success_rate.unwrap_or(0.0)).abs();
+    if let Some(old) = get_storage()
+        .find_proxy_by_ip_port(&proxy.ip, &proxy.port)
+        .await?
+    {
+        let delta = (result.success_rate.unwrap_or(0.0) - old.success_rate.unwrap_or(0.0)).abs();
         let stability = old.stability.unwrap_or(0.5) * 0.7 + (1.0 - delta) * 0.3;
         result.stability = Some(stability.clamp(0.0, 1.0));
     } else {
@@ -180,7 +194,6 @@ pub async fn evaluate(proxy: &ProxyBasic, config: &QualityConfig) -> Result<Prox
     compute_score(&mut result, config);
     Ok(Proxy::from_parts(proxy.clone(), result))
 }
-
 
 /// 对给定代理执行多个目标地址的多轮请求测试，
 /// 记录每轮成功率、平均速度、稳定性等指标。
@@ -202,37 +215,137 @@ pub async fn evaluate(proxy: &ProxyBasic, config: &QualityConfig) -> Result<Prox
 async fn run_tests(proxy: &ProxyBasic, config: &QualityConfig) -> Result<QualityTestResults> {
     let proxy_url = format!("http://{}:{}", proxy.ip, proxy.port);
     let proxy_obj = reqwest::Proxy::all(&proxy_url)?;
+    let client = reqwest::Client::builder()
+        .proxy(proxy_obj)
+        .timeout(config.timeout)
+        .build()?;
 
-    let mut all_results = Vec::new();
+    let mut futs = FuturesUnordered::new();
+    let total_tests = config.test_urls.len() as u64 * config.test_count;
 
     for test_url in &config.test_urls {
-        let mut results = QualityTestResults::new(config.test_count);
-
         for _ in 0..config.test_count {
-            let client = reqwest::Client::builder()
-                .proxy(proxy_obj.clone())
-                .timeout(config.timeout)
-                .build()?;
+            let client = client.clone();
+            let url = test_url.clone();
+            let label = format!("[{}:{}]", proxy.ip, proxy.port);
 
-            let start = std::time::Instant::now();
-            match client.get(test_url).send().await {
-                Ok(_) => {
-                    let elapsed = start.elapsed().as_secs_f64();
-                    let rounded = (elapsed * 100.0).round() / 100.0;
-                    results.record_success(rounded);
+            futs.push(async move {
+                send_with_retries(&client, &url, config.max_retries, &label).await
+            });
+        }
+    }
+
+    let mut results = QualityTestResults::new(total_tests);
+
+    while let Some(res) = futs.next().await {
+        match res {
+            Some(duration) => results.record_success(duration),
+            None => results.record_failure(),
+        }
+    }
+
+    Ok(results)
+}
+
+/// 向指定 URL 发送 GET 请求，失败时进行最多 `max_retries` 次重试，并记录耗时。
+///
+/// 每次请求都会打印日志，包括成功、失败和状态码错误的信息，方便调试和跟踪代理质量。
+///
+/// # 参数
+/// - `client`: 配置好的 `reqwest::Client`，包含代理设置与超时。
+/// - `url`: 要请求的目标 URL 字符串。
+/// - `max_retries`: 最大重试次数（不包括第一次尝试）。
+/// - `label`: 用于日志输出的代理标签（例如 `[127.0.0.1:8080]`）。
+///
+/// # 返回
+/// - `Some(f64)`：请求成功时返回耗时（单位：秒，保留两位小数）。
+/// - `None`：请求全部失败或状态码非 2xx。
+///
+/// # 日志输出示例
+/// ```text
+/// 🔁 [127.0.0.1:8080] 第 1 次请求 https://example.com 失败，原因：连接超时，正在重试...
+/// ❌ [127.0.0.1:8080] 第 3 次请求 https://example.com 最终失败，原因：连接被拒绝
+/// ```
+async fn send_with_retries(
+    client: &reqwest::Client,
+    url: &str,
+    max_retries: u8,
+    label: &str, // 用于输出代理 IP 信息
+) -> Option<f64> {
+    let mut attempt = 0;
+    let mut backoff = Duration::from_millis(500);
+
+    while attempt <= max_retries {
+        debug!(
+            "{} 开始第 {} 次请求 {}",
+            label,
+            attempt + 1,
+            url
+        );
+
+        let start = std::time::Instant::now();
+        match client.get(url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let elapsed = start.elapsed().as_secs_f64();
+                debug!(
+                    "{} 第 {} 次请求 {} 成功，耗时 {:.2} 秒",
+                    label,
+                    attempt + 1,
+                    url,
+                    elapsed
+                );
+                return Some(round2(elapsed));
+            }
+            Err(e) => {
+                debug!(
+                    "🔁 {} 第 {} 次请求 {} 失败，原因：{}",
+                    label,
+                    attempt + 1,
+                    url,
+                    e
+                );
+                if attempt < max_retries {
+                    debug!("{} 正在等待 {:?} 后重试...", label, backoff);
+                    sleep(backoff).await;
+                    backoff *= 2; // 指数退避
+                } else {
+                    debug!(
+                        "❌ {} 第 {} 次请求 {} 最终失败，原因：{}",
+                        label,
+                        attempt + 1,
+                        url,
+                        e
+                    );
                 }
-                Err(_) => {
-                    results.record_failure();
+            }
+            Ok(resp) => {
+                debug!(
+                    "⚠️ {} 第 {} 次请求 {} 返回非成功状态：{}",
+                    label,
+                    attempt + 1,
+                    url,
+                    resp.status()
+                );
+                if attempt < max_retries {
+                    debug!("{} 返回状态异常，等待 {:?} 后重试...", label, backoff);
+                    sleep(backoff).await;
+                    backoff *= 2;
+                } else {
+                    debug!(
+                        "❌ {} 第 {} 次请求 {} 最终返回非成功状态：{}",
+                        label,
+                        attempt + 1,
+                        url,
+                        resp.status()
+                    );
                 }
             }
         }
-        all_results.push(results);
+        attempt += 1;
     }
 
-    // 综合所有节点结果
-    Ok(merge_test_results(&all_results))
+    None
 }
-
 
 /// 合并多个测试结果为一个整体测试统计。
 ///
@@ -270,13 +383,12 @@ fn compute_score(proxy: &mut ProxyCheckResult, config: &QualityConfig) {
     let stability = proxy.stability.unwrap_or(0.0);
 
     proxy.score = Some(
-        speed_score * config.speed_weight
+        (speed_score * config.speed_weight
             + success * config.success_weight
-            + stability * config.stability_weight,
+            + stability * config.stability_weight)
+            .clamp(0.0, 1.0),
     );
 }
-
-
 
 #[cfg(test)]
 mod tests {
