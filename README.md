@@ -31,7 +31,7 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourname/rust-proxy-crawler.git
+git clone https://github.com/Kcxuao/ProxyHydra.git
 cd rust-proxy-crawler
 ```
 
