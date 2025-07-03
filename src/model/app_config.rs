@@ -4,9 +4,21 @@
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
+pub static APP_CONFIG: Lazy<AppConfig> =
+    Lazy::new(|| AppConfig::load().expect("Failed to load configuration"));
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AppConfig {
-    pub verify: VerifyConfig
+    pub verify: VerifyConfig,
+    pub db: DbConfig,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DbConfig {
+    pub driver: String,
+    pub connection_string: String,
+    pub table_name: String,
+    pub max_connections: u32
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -16,8 +28,6 @@ pub struct VerifyConfig {
     pub test_urls: Vec<String>,
 }
 
-pub static APP_CONFIG: Lazy<AppConfig> =
-    Lazy::new(|| AppConfig::load().expect("Failed to load configuration"));
 
 impl AppConfig {
     fn load() -> anyhow::Result<Self> {

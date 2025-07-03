@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use crate::model::ProxyBasic;
 
 /// 将浮点数四舍五入为两位小数。
-pub fn round2(val: f32) -> f32 {
+pub fn round2(val: f64) -> f64 {
     (val * 100.0).round() / 100.0
 }
 
@@ -21,7 +21,7 @@ pub fn dedup_proxies(proxies: Vec<ProxyBasic>) -> Vec<ProxyBasic> {
 
 /// 根据响应时间（毫秒）计算速度得分（0.0 ~ 1.0）
 /// 可根据项目需求自行调整评分标准
-pub fn speed_to_score(speed_ms: f32) -> f32 {
+pub fn speed_to_score(speed_ms: f64) -> f64 {
     match speed_ms {
         s if s < 100.0 => 1.0,
         s if s < 500.0 => 0.8,
@@ -29,4 +29,13 @@ pub fn speed_to_score(speed_ms: f32) -> f32 {
         s if s < 2000.0 => 0.3,
         _ => 0.1,
     }
+}
+
+/// 表名基本校验
+pub fn validate_table_name(name: &str) -> bool {
+    // 限定表名为英文字母、下划线、数字，且不能以数字开头
+    let is_valid = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_') && name.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false);
+    is_valid
 }

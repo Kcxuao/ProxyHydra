@@ -1,11 +1,22 @@
-
 [verify]
 # 检验代理有效性时的并发数
 semaphore = 20
 # 超时时间
 timeout = 3
-
+# 验证代理时使用的URL列表
 test_urls = [
     "https://cip.cc",
     "https://httpbin.org/get",
 ]
+
+[db]
+# 数据库类型
+driver = "sqlite" # sqlite | mysql | postgres
+# 数据库连接字符串
+#connection_string = "postgres://pgsql:xgo2fuH7gf9OlrVuhHUsL1K33OeK1m@10.1.1.1:5432"
+#connection_string = "mysql://root:mysql_siAekB@10.1.1.1:3306/demo"
+connection_string = "sqlite://proxy.db"
+# 数据库表名
+table_name = "proxies"
+# 最大连接数
+max_connections = 10

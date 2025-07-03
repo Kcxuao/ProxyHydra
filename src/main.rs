@@ -2,15 +2,16 @@ mod model;
 mod service;
 mod fetcher;
 mod common;
+mod db;
 
 use tracing::log::info;
 use tracing_subscriber::fmt::init;
-use crate::service::{storage, verifier};
+use crate::service::verifier;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init(); // 初始化日志
-    storage::init().await?; // 初始化数据库
+    db::init().await?; // 初始化数据库
 
     info!("========== [代理采集阶段] ==========");
     let list = match fetcher::fetch_all_sources().await {
