@@ -14,8 +14,8 @@ test_urls = [
 # 数据库类型
 driver = "sqlite" # sqlite | mysql | postgres
 # 数据库连接字符串
-#connection_string = "postgres://pgsql:xgo2fuH7gf9OlrVuhHUsL1K33OeK1m@10.1.1.1:5432"
-#connection_string = "mysql://root:mysql_siAekB@10.1.1.1:3306/demo"
+#connection_string = "postgres://user:pass@localhost/proxyhydra"
+#connection_string = "mysql://user:pass@localhost:3306/proxyhydra"
 connection_string = "sqlite://proxy.db"
 # 数据库表名
 table_name = "proxies"
