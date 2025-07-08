@@ -31,6 +31,9 @@ pub trait ProxyStorage: Send + Sync {
 
     /// 列出数据库中所有代理记录。
     async fn list_all_proxies(&self) -> Result<Vec<Proxy>>;
+
+    async fn random_proxy(&self) -> Result<ProxyBasic>;
+    async fn remove_proxy(&self, ip: &str) -> Result<bool>;
 }
 
 /// 数据库后端枚举，按启用特性动态支持多种数据库驱动。
@@ -116,6 +119,28 @@ impl ProxyStorage for StorageBackend {
             Self::MySql(s) => s.list_all_proxies().await,
             #[cfg(feature = "postgres")]
             Self::Postgres(s) => s.list_all_proxies().await,
+        }
+    }
+
+    async fn random_proxy(&self) -> Result<ProxyBasic> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(s) => s.random_proxy().await,
+            #[cfg(feature = "mysql")]
+            Self::MySql(s) => s.random_proxy().await,
+            #[cfg(feature = "postgres")]
+            Self::Postgres(s) => s.random_proxy().await,
+        }
+    }
+
+    async fn remove_proxy(&self, ip: &str) -> Result<bool> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(s) => s.remove_proxy(ip).await,
+            #[cfg(feature = "mysql")]
+            Self::MySql(s) => s.remove_proxy(ip).await,
+            #[cfg(feature = "postgres")]
+            Self::Postgres(s) => s.remove_proxy(ip).await,
         }
     }
 }

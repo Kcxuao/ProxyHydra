@@ -132,6 +132,22 @@ impl ProxyStorage for SqliteStorage {
             .await?;
         Ok(proxies)
     }
+
+    async fn random_proxy(&self) -> Result<ProxyBasic> {
+        let proxy= sqlx::query_as::<_, ProxyBasic>("SELECT * FROM proxies ORDER BY RANDOM() LIMIT 1")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(proxy)
+    }
+
+    async fn remove_proxy(&self, ip: &str) -> Result<bool> {
+        sqlx::query("DELETE FROM proxies WHERE ip = ?")
+            .bind(ip)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(true)
+    }
 }
 
 #[cfg(test)]

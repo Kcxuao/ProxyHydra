@@ -3,11 +3,11 @@
 semaphore = 20
 # 超时时间
 timeout = 3
-
+# 验证等级 【0-2】
 verify_level = 0
 # 验证代理时使用的URL列表
 test_urls = [
-    "https://cip.cc",
+    "https://www.baidu.com",
 ]
 
 [db]

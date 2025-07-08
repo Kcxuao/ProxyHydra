@@ -22,6 +22,7 @@ use tracing::info;
 /// # 日志
 /// 会输出抓取到的代理数量日志：`BFBKE 抓取了 N 条代理`。
 pub async fn fetch() -> Result<Vec<ProxyBasic>> {
+    info!("========== [Bfbke] ==========");
     let text = reqwest::get("https://www.bfbke.com/proxy.txt").await?.text().await?;
     let mut list = Vec::new();
 

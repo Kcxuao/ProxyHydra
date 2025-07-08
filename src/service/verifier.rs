@@ -90,6 +90,7 @@ pub async fn verify_all(mut basics: Vec<ProxyBasic>) -> Result<usize> {
                 Ok(false) => {
                     let ms = start.elapsed().as_millis();
                     warn!("🔴 {} 无效代理，耗时 {}ms", label, ms);
+
                 }
                 Err(e) => {
                     let ms = start.elapsed().as_millis();
@@ -135,8 +136,17 @@ async fn verify_single(basic: &ProxyBasic, config: &quality::QualityConfig) -> R
         get_storage().upsert_quality_proxy(&updated).await?;
         Ok(true)
     } else {
+        get_storage().remove_proxy(&basic.ip).await?;
         Ok(false)
     }
+}
+
+pub async fn verify_database() -> Result<()> {
+    info!("========== [数据库存活代理校验] ==========");
+    let list: Vec<ProxyBasic> = get_storage().list_all_proxies().await?.iter().map(|p| p.basic()).collect();
+    verify_all(list).await?;
+
+    Ok(())
 }
 
 #[cfg(test)]

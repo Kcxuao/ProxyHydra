@@ -33,7 +33,7 @@ use std::time::Duration;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::time::sleep;
-use tracing::log::{debug, info, warn};
+use tracing::log::{debug};
 
 /// 用于配置代理质量评估的权重与测试参数。
 ///

@@ -134,6 +134,14 @@ impl ProxyStorage for MySqlStorage {
             .await?;
         Ok(proxies)
     }
+
+    async fn random_proxy(&self) -> Result<ProxyBasic> {
+        todo!()
+    }
+
+    async fn remove_proxy(&self, ip: &str) -> Result<bool> {
+        todo!()
+    }
 }
 
 

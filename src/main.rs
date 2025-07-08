@@ -3,23 +3,21 @@ mod service;
 mod fetcher;
 mod common;
 mod db;
+mod web;
 
-use tracing::log::info;
-use tracing::{error, warn};
-use tracing_subscriber::fmt::init;
+use std::sync::{Arc, Mutex};
+use salvo::{Depot, Listener, Router, Server};
+use salvo::prelude::TcpListener;
 use crate::common::log::init_logging;
-use crate::service::verifier;
+use crate::db::get_storage;
+use crate::db::manager::ProxyStorage;
+use crate::web::api::proxy_api::proxy_router;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 必须是程序第一个调用！
     init_logging().expect("Failed to initialize logging");
-    // db::init().await?; // 初始化数据库
-    tracing::error!("这是 error 级别");
-    tracing::warn!("这是 warn 级别");
-    tracing::info!("这是 info 级别");
-    tracing::debug!("这是 debug 级别");
-    tracing::trace!("这是 trace 级别");
+    db::init().await?; // 初始化数据库
 
     // info!("========== [代理采集阶段] ==========");
     // let list = match fetcher::fetch_all_sources().await {
@@ -31,6 +29,11 @@ async fn main() -> anyhow::Result<()> {
     // };
     // tracing::info!("抓取到总共 {} 条代理", list.len());
     // verifier::verify_all(list).await?;
+
+    let acceptor = TcpListener::new("0.0.0.0:5800").bind().await;
+
+    let router = Router::new().push(proxy_router());
+    Server::new(acceptor).serve(router).await;
 
     Ok(())
 }

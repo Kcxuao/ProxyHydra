@@ -31,10 +31,11 @@ use tracing::info;
 /// # 日志
 /// 每页请求开始时输出类似：`正在请求第 1 页数据`
 pub async fn fetch() -> Result<Vec<ProxyBasic>> {
+    info!("========== [Kuai] ==========");
     let re = Regex::new(r#"const fpsList = (.*);"#)?;
     let mut list = Vec::new();
 
-    for page in 1..=1 {
+    for page in 1..=5 {
         info!("正在请求第 {} 页数据", page);
         let url = format!("https://www.kuaidaili.com/free/intr/{}/", page);
         let html = reqwest::get(&url).await?.text().await?;
