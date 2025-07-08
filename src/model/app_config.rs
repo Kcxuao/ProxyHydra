@@ -12,7 +12,15 @@ pub struct AppConfig {
     pub verify: VerifyConfig,
     pub db: DbConfig,
     pub log: LoggingConfig,
+    pub server: ServerConfig
+
 }
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ServerConfig {
+    pub addr: String,
+    pub port: u32
+}
+
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DbConfig {

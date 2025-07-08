@@ -1,3 +1,7 @@
+[server]
+addr = "0.0.0.0"
+port = 9900
+
 [verify]
 # 检验代理有效性时的并发数
 semaphore = 20
